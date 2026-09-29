@@ -130,6 +130,11 @@ def collect_environment() -> dict:
         "node": _command_version(["node", "--version"], r"v\d+(?:\.\d+){1,2}", mise_path),
         "pnpm": _command_version(
             ["pnpm", "--version"], r"\d+\.\d+\.\d+", mise_path, Path(__file__).resolve().parents[1] / "node"
+        ) or _command_version(
+            ["corepack", "pnpm", "--version"],
+            r"\d+\.\d+\.\d+",
+            mise_path,
+            Path(__file__).resolve().parents[1] / "node",
         ),
         "elixir": _command_version(
             ["elixir", "--version"], r"Elixir \d+(?:\.\d+){1,2}", mise_path
