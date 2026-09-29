@@ -1,0 +1,178 @@
+{
+  "aggregate": {
+    "latency_ms_median": {
+      "p50": 20.022,
+      "p95": 22.345,
+      "p99": 22.345
+    },
+    "requests_per_second_median": 240.884
+  },
+  "configuration": {
+    "downstream_concurrency": 1,
+    "job_timeout_ms": 10000,
+    "max_retries": 3,
+    "process_delay_ms": 10,
+    "queue_capacity": 8,
+    "repeats": 1,
+    "retry_base_ms": 10,
+    "scenario_parameters": {
+      "burst_rate": 200,
+      "concurrency": 5,
+      "cpu_ms": 100,
+      "duration_seconds": 5,
+      "failures_injected": 5,
+      "rate_per_second": 50,
+      "requests": 20,
+      "stream_delay_ms": 1,
+      "stream_items": 10,
+      "tenant_probe_tenant": null
+    },
+    "tenant_outstanding_limit": 0,
+    "workers": 2
+  },
+  "environment": {
+    "container_limits": {
+      "cpu_cores_rounded": null,
+      "memory_gib_rounded": null
+    },
+    "git_commit": "aad3b68c04a6",
+    "hardware": {
+      "cpu_model": "AMD Ryzen 9 7900 12-Core Processor",
+      "logical_cores": 24,
+      "memory_gib_rounded": 62.0
+    },
+    "os": {
+      "architecture": "x86_64",
+      "distribution_id": "cachyos",
+      "distribution_version": null,
+      "family": "linux",
+      "kernel_version": "7.2.3"
+    },
+    "python": "3.14.7",
+    "tools": {
+      "cargo": "cargo 1.98.1",
+      "elixir": "Elixir 1.19.5",
+      "erlang_otp": "28",
+      "go": "go version go1.27.1",
+      "golangci_lint": "golangci-lint has version 2.13.2",
+      "mise": "2026.9.4",
+      "mix": "Mix 1.19.5",
+      "node": "v24.21.0",
+      "oha": "oha 1.14.0",
+      "perf": "perf version 7.2.3-1",
+      "pnpm": "11.21.0",
+      "rustc": "rustc 1.98.1"
+    },
+    "working_tree_clean": false
+  },
+  "git_commit": "aad3b68c04a6",
+  "load_generator": {
+    "name": "oha",
+    "version": "oha 1.14.0"
+  },
+  "repetitions": [
+    {
+      "application_metrics": {
+        "after_drain": {
+          "downstream_concurrency": 1,
+          "downstream_in_use": 0,
+          "in_flight": 0,
+          "jobs_enqueued_total": 0,
+          "jobs_failed_total": 0,
+          "jobs_in_flight": 0,
+          "jobs_processed_total": 0,
+          "jobs_rejected_total": 0,
+          "max_outstanding": 10,
+          "processing_duration_ms_total": 0,
+          "queue_capacity": 8,
+          "queue_depth": 0,
+          "rate_limited_total": 0,
+          "retries_total": 0,
+          "sync_requests_in_flight": 0,
+          "tenant_outstanding_limit": 0,
+          "tenant_rejected_total": 0,
+          "workers": 2
+        },
+        "after_load": {
+          "downstream_concurrency": 1,
+          "downstream_in_use": 0,
+          "in_flight": 0,
+          "jobs_enqueued_total": 0,
+          "jobs_failed_total": 0,
+          "jobs_in_flight": 0,
+          "jobs_processed_total": 0,
+          "jobs_rejected_total": 0,
+          "max_outstanding": 10,
+          "processing_duration_ms_total": 0,
+          "queue_capacity": 8,
+          "queue_depth": 0,
+          "rate_limited_total": 0,
+          "retries_total": 0,
+          "sync_requests_in_flight": 0,
+          "tenant_outstanding_limit": 0,
+          "tenant_rejected_total": 0,
+          "workers": 2
+        },
+        "before": {
+          "downstream_concurrency": 1,
+          "downstream_in_use": 0,
+          "in_flight": 0,
+          "jobs_enqueued_total": 0,
+          "jobs_failed_total": 0,
+          "jobs_in_flight": 0,
+          "jobs_processed_total": 0,
+          "jobs_rejected_total": 0,
+          "max_outstanding": 10,
+          "processing_duration_ms_total": 0,
+          "queue_capacity": 8,
+          "queue_depth": 0,
+          "rate_limited_total": 0,
+          "retries_total": 0,
+          "sync_requests_in_flight": 0,
+          "tenant_outstanding_limit": 0,
+          "tenant_rejected_total": 0,
+          "workers": 2
+        }
+      },
+      "graceful_shutdown": null,
+      "http": {
+        "bytes_per_second": 5058.57,
+        "duration_seconds": 0.083027,
+        "http_2xx_rate": 1.0,
+        "latency_ms": {
+          "p50": 20.022,
+          "p95": 22.345,
+          "p99": 22.345
+        },
+        "oha_success_rate": 1.0,
+        "requests": 20,
+        "requests_per_second": 240.884,
+        "status_codes": {
+          "200": 20
+        },
+        "transport_errors": 0
+      },
+      "index": 1,
+      "parameters": {
+        "concurrency": 5,
+        "duration_seconds": 5,
+        "rate_per_second": 50,
+        "requests": 20,
+        "stream_delay_ms": 1,
+        "stream_items": 10
+      },
+      "service_resources": {
+        "average_cpu_cores": 0.116,
+        "peak_rss_mib": 122.99,
+        "sample_interval_ms": 100,
+        "sampled": true
+      },
+      "tenant_probe": null
+    }
+  ],
+  "run_id": "ae944ee00321",
+  "scenario": "streaming",
+  "schema_version": 1,
+  "stack": "elixir",
+  "started_at": "2026-09-29T16:13:29Z"
+}

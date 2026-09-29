@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -19,42 +21,51 @@ import (
 )
 
 type Config struct {
-	Addr                  string
-	QueueCapacity         int
-	Workers               int
-	DownstreamConcurrency int
-	ProcessDelay          time.Duration
-	JobTimeout            time.Duration
-	RatePerSecond         rate.Limit
-	RateBurst             int
+	Addr                   string
+	QueueCapacity          int
+	Workers                int
+	DownstreamConcurrency  int
+	ProcessDelay           time.Duration
+	JobTimeout             time.Duration
+	RatePerSecond          rate.Limit
+	RateBurst              int
+	TenantOutstandingLimit int
+	MaxRetries             int
+	RetryBase              time.Duration
 }
 
 type Job struct {
-	ID int64 `json:"id"`
+	ID       int64  `json:"id"`
+	Tenant   string `json:"tenant"`
+	Failures int    `json:"failures"`
 }
 
 type Metrics struct {
-	Enqueued  atomic.Int64
-	Rejected  atomic.Int64
-	Processed atomic.Int64
-	Failed    atomic.Int64
-	InFlight  atomic.Int64
-	SyncInUse atomic.Int64
+	Enqueued       atomic.Int64
+	Rejected       atomic.Int64
+	Processed      atomic.Int64
+	Failed         atomic.Int64
+	Retries        atomic.Int64
+	TenantRejected atomic.Int64
+	InFlight       atomic.Int64
+	SyncInUse      atomic.Int64
 }
 
 type App struct {
-	config  Config
-	queue   chan Job
-	down    chan struct{}
-	limiter *rate.Limiter
-	metrics Metrics
-	ids     atomic.Int64
-	wg      sync.WaitGroup
+	config            Config
+	queue             chan Job
+	down              chan struct{}
+	limiter           *rate.Limiter
+	metrics           Metrics
+	ids               atomic.Int64
+	wg                sync.WaitGroup
+	tenantMu          sync.Mutex
+	tenantOutstanding map[string]int
 }
 
 func NewApp(config Config) *App {
 	if config.Addr == "" {
-		config.Addr = ":8080"
+		config.Addr = "127.0.0.1:8080"
 	}
 	if config.QueueCapacity < 1 {
 		config.QueueCapacity = 32
@@ -77,12 +88,19 @@ func NewApp(config Config) *App {
 	if config.RateBurst < 1 {
 		config.RateBurst = 20
 	}
+	if config.MaxRetries < 0 {
+		config.MaxRetries = 3
+	}
+	if config.RetryBase <= 0 {
+		config.RetryBase = 25 * time.Millisecond
+	}
 
 	return &App{
-		config:  config,
-		queue:   make(chan Job, config.QueueCapacity),
-		down:    make(chan struct{}, config.DownstreamConcurrency),
-		limiter: rate.NewLimiter(config.RatePerSecond, config.RateBurst),
+		config:            config,
+		queue:             make(chan Job, config.QueueCapacity),
+		down:              make(chan struct{}, config.DownstreamConcurrency),
+		limiter:           rate.NewLimiter(config.RatePerSecond, config.RateBurst),
+		tenantOutstanding: make(map[string]int),
 	}
 }
 
@@ -96,6 +114,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /cpu", a.handleCPU)
 	mux.HandleFunc("GET /limited", a.handleLimited)
 	mux.HandleFunc("GET /batch", a.handleBatch)
+	mux.HandleFunc("GET /stream", a.handleStream)
 	mux.HandleFunc("GET /metrics", a.handleMetrics)
 	return mux
 }
@@ -112,13 +131,33 @@ func (a *App) StopWorkers() {
 	a.wg.Wait()
 }
 
-func (a *App) handleJob(w http.ResponseWriter, _ *http.Request) {
-	job := Job{ID: a.ids.Add(1)}
+func (a *App) handleJob(w http.ResponseWriter, r *http.Request) {
+	tenant := r.URL.Query().Get("tenant")
+	if tenant == "" {
+		tenant = "default"
+	}
+	if tenant != "alpha" && tenant != "beta" && tenant != "default" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant must be alpha, beta, or default"})
+		return
+	}
+	failures, err := queryInt(r, "failures", 0, 0, 10)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	job := Job{ID: a.ids.Add(1), Tenant: tenant, Failures: failures}
+	if !a.reserveTenant(tenant) {
+		a.metrics.Rejected.Add(1)
+		a.metrics.TenantRejected.Add(1)
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error_code": "TENANT_BUSY"})
+		return
+	}
 	select {
 	case a.queue <- job:
 		a.metrics.Enqueued.Add(1)
 		writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "job_id": job.ID})
 	default:
+		a.releaseTenant(tenant)
 		a.metrics.Rejected.Add(1)
 		w.Header().Set("Retry-After", "1")
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{
@@ -250,19 +289,52 @@ func (a *App) handleBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int64{"items": int64(items), "completed": completed.Load(), "concurrency": int64(concurrency)})
 }
 
+func (a *App) handleStream(w http.ResponseWriter, r *http.Request) {
+	items, err := queryInt(r, "items", 20, 1, 1000)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	delayMS, err := queryInt(r, "delay_ms", 10, 0, 1000)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	ctx := r.Context()
+	for item := 1; item <= items; item++ {
+		if _, err := fmt.Fprintf(w, "%d\n", item); err != nil {
+			return
+		}
+		flusher.Flush()
+		if err := sleepContext(ctx, time.Duration(delayMS)*time.Millisecond); err != nil {
+			return
+		}
+	}
+}
+
 func (a *App) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"queue_depth":             len(a.queue),
-		"queue_capacity":          cap(a.queue),
-		"workers":                 a.config.Workers,
-		"jobs_in_flight":          a.metrics.InFlight.Load(),
-		"downstream_in_use":       len(a.down),
-		"downstream_concurrency":  cap(a.down),
-		"sync_requests_in_flight": a.metrics.SyncInUse.Load(),
-		"jobs_enqueued_total":     a.metrics.Enqueued.Load(),
-		"requests_rejected_total": a.metrics.Rejected.Load(),
-		"jobs_processed_total":    a.metrics.Processed.Load(),
-		"jobs_failed_total":       a.metrics.Failed.Load(),
+		"queue_depth":              len(a.queue),
+		"queue_capacity":           cap(a.queue),
+		"workers":                  a.config.Workers,
+		"jobs_in_flight":           a.metrics.InFlight.Load(),
+		"downstream_in_use":        len(a.down),
+		"downstream_concurrency":   cap(a.down),
+		"sync_requests_in_flight":  a.metrics.SyncInUse.Load(),
+		"jobs_enqueued_total":      a.metrics.Enqueued.Load(),
+		"requests_rejected_total":  a.metrics.Rejected.Load(),
+		"jobs_processed_total":     a.metrics.Processed.Load(),
+		"jobs_failed_total":        a.metrics.Failed.Load(),
+		"jobs_retries_total":       a.metrics.Retries.Load(),
+		"tenant_rejected_total":    a.metrics.TenantRejected.Load(),
+		"tenant_outstanding_limit": a.config.TenantOutstandingLimit,
 	})
 }
 
@@ -270,23 +342,70 @@ func (a *App) worker(workerID int) {
 	defer a.wg.Done()
 	for job := range a.queue {
 		a.metrics.InFlight.Add(1)
-		ctx, cancel := context.WithTimeout(context.Background(), a.config.JobTimeout)
-		select {
-		case a.down <- struct{}{}:
-			err := sleepContext(ctx, a.config.ProcessDelay)
-			<-a.down
-			if err != nil {
-				a.metrics.Failed.Add(1)
-				log.Printf("worker=%d job=%d failed: %v", workerID, job.ID, err)
-			} else {
-				a.metrics.Processed.Add(1)
-			}
-		case <-ctx.Done():
+		err := a.processJob(job)
+		if err != nil {
 			a.metrics.Failed.Add(1)
-			log.Printf("worker=%d job=%d failed: %v", workerID, job.ID, ctx.Err())
+			log.Printf("worker=%d job=%d failed: %v", workerID, job.ID, err)
+		} else {
+			a.metrics.Processed.Add(1)
 		}
-		cancel()
+		a.releaseTenant(job.Tenant)
 		a.metrics.InFlight.Add(-1)
+	}
+}
+
+func (a *App) processJob(job Job) error {
+	ctx, cancel := context.WithTimeout(context.Background(), a.config.JobTimeout)
+	defer cancel()
+	select {
+	case a.down <- struct{}{}:
+		defer func() { <-a.down }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	for attempt := 0; ; attempt++ {
+		if err := sleepContext(ctx, a.config.ProcessDelay); err != nil {
+			return err
+		}
+		if attempt >= job.Failures {
+			return nil
+		}
+		if attempt >= a.config.MaxRetries {
+			return fmt.Errorf("retry limit reached after %d attempts", attempt+1)
+		}
+		a.metrics.Retries.Add(1)
+		backoff := a.config.RetryBase * time.Duration(1<<attempt)
+		jitter := time.Duration(rand.Int63n(int64(max(time.Millisecond, backoff/4))))
+		if err := sleepContext(ctx, backoff+jitter); err != nil {
+			return err
+		}
+	}
+}
+
+func (a *App) reserveTenant(tenant string) bool {
+	if a.config.TenantOutstandingLimit <= 0 {
+		return true
+	}
+	a.tenantMu.Lock()
+	defer a.tenantMu.Unlock()
+	if a.tenantOutstanding[tenant] >= a.config.TenantOutstandingLimit {
+		return false
+	}
+	a.tenantOutstanding[tenant]++
+	return true
+}
+
+func (a *App) releaseTenant(tenant string) {
+	if a.config.TenantOutstandingLimit <= 0 {
+		return
+	}
+	a.tenantMu.Lock()
+	defer a.tenantMu.Unlock()
+	if a.tenantOutstanding[tenant] <= 1 {
+		delete(a.tenantOutstanding, tenant)
+	} else {
+		a.tenantOutstanding[tenant]--
 	}
 }
 
@@ -329,6 +448,14 @@ func envInt(name string, fallback int) int {
 	return value
 }
 
+func envIntAllowZero(name string, fallback int) int {
+	value, err := strconv.Atoi(os.Getenv(name))
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
+
 func envDuration(name string, fallback time.Duration) time.Duration {
 	value, err := strconv.Atoi(os.Getenv(name))
 	if err != nil || value < 1 {
@@ -339,14 +466,17 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 
 func main() {
 	config := Config{
-		Addr:                  envString("ADDR", ":8080"),
-		QueueCapacity:         envInt("QUEUE_CAPACITY", 32),
-		Workers:               envInt("WORKERS", 4),
-		DownstreamConcurrency: envInt("DOWNSTREAM_CONCURRENCY", 2),
-		ProcessDelay:          envDuration("PROCESS_DELAY_MS", 750*time.Millisecond),
-		JobTimeout:            envDuration("JOB_TIMEOUT_MS", 5*time.Second),
-		RatePerSecond:         rate.Limit(envInt("RATE_PER_SECOND", 10)),
-		RateBurst:             envInt("RATE_BURST", 20),
+		Addr:                   envString("ADDR", "127.0.0.1:8080"),
+		QueueCapacity:          envInt("QUEUE_CAPACITY", 32),
+		Workers:                envInt("WORKERS", 4),
+		DownstreamConcurrency:  envInt("DOWNSTREAM_CONCURRENCY", 2),
+		ProcessDelay:           envDuration("PROCESS_DELAY_MS", 750*time.Millisecond),
+		JobTimeout:             envDuration("JOB_TIMEOUT_MS", 5*time.Second),
+		RatePerSecond:          rate.Limit(envInt("RATE_PER_SECOND", 10)),
+		RateBurst:              envInt("RATE_BURST", 20),
+		TenantOutstandingLimit: envInt("TENANT_OUTSTANDING_LIMIT", 0),
+		MaxRetries:             envIntAllowZero("MAX_RETRIES", 3),
+		RetryBase:              envDuration("RETRY_BASE_MS", 25*time.Millisecond),
 	}
 	app := NewApp(config)
 	app.StartWorkers()
@@ -357,6 +487,18 @@ func main() {
 		log.Printf("Go example listening on %s", config.Addr)
 		serverErr <- server.ListenAndServe()
 	}()
+
+	var pprofServer *http.Server
+	if os.Getenv("ENABLE_PPROF") == "1" {
+		pprofAddr := envString("PPROF_ADDR", "127.0.0.1:6060")
+		pprofServer = &http.Server{Addr: pprofAddr, Handler: http.DefaultServeMux, ReadHeaderTimeout: 3 * time.Second}
+		go func() {
+			if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("local pprof listener failed: %v", err)
+			}
+		}()
+		log.Printf("pprof enabled on %s", pprofAddr)
+	}
 
 	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -372,6 +514,11 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("HTTP shutdown: %v", err)
+	}
+	if pprofServer != nil {
+		if err := pprofServer.Shutdown(ctx); err != nil {
+			log.Printf("pprof shutdown: %v", err)
+		}
 	}
 	app.StopWorkers()
 }

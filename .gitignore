@@ -3,3 +3,10 @@
 **/*.prof
 **/*.pprof
 **/flamegraph.svg
+**/_build/
+**/deps/
+**/cover/
+**/erl_crash.dump
+**/__pycache__/
+*.py[cod]
+/benchmarks/raw/

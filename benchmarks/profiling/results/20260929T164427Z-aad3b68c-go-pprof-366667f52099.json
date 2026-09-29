@@ -1,0 +1,161 @@
+{
+  "application_metrics": {
+    "downstream_concurrency": 2,
+    "downstream_in_use": 0,
+    "jobs_enqueued_total": 0,
+    "jobs_failed_total": 0,
+    "jobs_in_flight": 0,
+    "jobs_processed_total": 0,
+    "jobs_retries_total": 0,
+    "queue_capacity": 8,
+    "queue_depth": 0,
+    "requests_rejected_total": 482767,
+    "sync_requests_in_flight": 0,
+    "tenant_outstanding_limit": 0,
+    "tenant_rejected_total": 0,
+    "workers": 2
+  },
+  "configuration": {
+    "concurrency": 8,
+    "cpu_load_seconds": 5,
+    "cpu_request_ms": 500,
+    "downstream_concurrency": 2,
+    "pprof_bind_scope": "loopback",
+    "profile_seconds": 3
+  },
+  "environment": {
+    "container_limits": {
+      "cpu_cores_rounded": null,
+      "memory_gib_rounded": null
+    },
+    "git_commit": "aad3b68c04a6",
+    "hardware": {
+      "cpu_model": "AMD Ryzen 9 7900 12-Core Processor",
+      "logical_cores": 24,
+      "memory_gib_rounded": 62.0
+    },
+    "os": {
+      "architecture": "x86_64",
+      "distribution_id": "cachyos",
+      "distribution_version": null,
+      "family": "linux",
+      "kernel_version": "7.2.3"
+    },
+    "python": "3.14.7",
+    "tools": {
+      "cargo": "cargo 1.98.1",
+      "elixir": "Elixir 1.19.5",
+      "erlang_otp": "28",
+      "go": "go version go1.27.1",
+      "golangci_lint": "golangci-lint has version 2.13.2",
+      "mise": "2026.9.4",
+      "mix": "Mix 1.19.5",
+      "node": "v24.21.0",
+      "oha": "oha 1.14.0",
+      "perf": "perf version 7.2.3-1",
+      "pnpm": "11.21.0",
+      "rustc": "rustc 1.98.1"
+    },
+    "working_tree_clean": false
+  },
+  "git_commit": "aad3b68c04a6",
+  "graceful_shutdown": {
+    "duration_seconds": 0.003172,
+    "exit_code": 0,
+    "timed_out": false
+  },
+  "load_result": {
+    "bytes_per_second": 3666999.18,
+    "duration_seconds": 5.00313,
+    "http_2xx_rate": 4.1e-05,
+    "latency_ms": {
+      "p50": 0.047,
+      "p95": 0.129,
+      "p99": 0.265
+    },
+    "oha_success_rate": 1.0,
+    "requests": 482787,
+    "requests_per_second": 96497.001,
+    "status_codes": {
+      "200": 20,
+      "503": 482767
+    },
+    "transport_errors": 0
+  },
+  "profile_summary": {
+    "profile_type": "cpu",
+    "raw_profile_retained": false,
+    "sample_duration_seconds": 3,
+    "top_functions": [
+      {
+        "cumulative_percent": 34.92,
+        "cumulative_seconds": 5.43,
+        "flat_percent": 34.02,
+        "flat_seconds": 5.29,
+        "symbol": "main.burnCPU"
+      },
+      {
+        "cumulative_percent": 3.28,
+        "cumulative_seconds": 0.51,
+        "flat_percent": 3.28,
+        "flat_seconds": 0.51,
+        "symbol": "runtime.futex"
+      },
+      {
+        "cumulative_percent": 1.29,
+        "cumulative_seconds": 0.2,
+        "flat_percent": 1.29,
+        "flat_seconds": 0.2,
+        "symbol": "runtime.usleep"
+      },
+      {
+        "cumulative_percent": 3.73,
+        "cumulative_seconds": 0.58,
+        "flat_percent": 1.22,
+        "flat_seconds": 0.19,
+        "symbol": "runtime.stealWork"
+      },
+      {
+        "cumulative_percent": 0.96,
+        "cumulative_seconds": 0.15,
+        "flat_percent": 0.96,
+        "flat_seconds": 0.15,
+        "symbol": "runtime.procyieldAsm"
+      },
+      {
+        "cumulative_percent": 1.99,
+        "cumulative_seconds": 0.31,
+        "flat_percent": 0.71,
+        "flat_seconds": 0.11,
+        "symbol": "runtime.lock2"
+      },
+      {
+        "cumulative_percent": 0.71,
+        "cumulative_seconds": 0.11,
+        "flat_percent": 0.71,
+        "flat_seconds": 0.11,
+        "symbol": "time.runtimeNow"
+      },
+      {
+        "cumulative_percent": 12.48,
+        "cumulative_seconds": 1.94,
+        "flat_percent": 0.64,
+        "flat_seconds": 0.1,
+        "symbol": "runtime.findRunnable"
+      }
+    ],
+    "total_cpu_samples_seconds": 15.55
+  },
+  "profiler": "go tool pprof",
+  "run_id": "366667f52099",
+  "schema_version": 1,
+  "service_resources": {
+    "average_cpu_cores": 4.869,
+    "peak_rss_mib": 20.66,
+    "sample_interval_ms": 100,
+    "sampled": true
+  },
+  "stack": "go",
+  "started_at": "2026-09-29T16:44:27Z",
+  "working_tree_clean": false
+}

@@ -1,13 +1,16 @@
 use axum::{
     Json, Router,
+    body::{Body, Bytes},
     extract::{Query, State},
-    http::StatusCode,
+    http::{Response, StatusCode},
     response::IntoResponse,
     routing::{get, post},
 };
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
+    convert::Infallible,
     sync::{
         Arc, Mutex,
         atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering},
@@ -29,6 +32,9 @@ pub struct Config {
     pub job_timeout: Duration,
     pub rate_per_second: f64,
     pub rate_burst: usize,
+    pub tenant_outstanding_limit: usize,
+    pub max_retries: usize,
+    pub retry_base: Duration,
 }
 
 impl Default for Config {
@@ -41,6 +47,9 @@ impl Default for Config {
             job_timeout: Duration::from_secs(5),
             rate_per_second: 10.0,
             rate_burst: 20,
+            tenant_outstanding_limit: 0,
+            max_retries: 3,
+            retry_base: Duration::from_millis(25),
         }
     }
 }
@@ -48,6 +57,8 @@ impl Default for Config {
 #[derive(Clone, Debug)]
 pub struct Job {
     id: u64,
+    tenant: String,
+    failures: usize,
 }
 
 #[derive(Default)]
@@ -56,6 +67,8 @@ struct Metrics {
     rejected: AtomicU64,
     processed: AtomicU64,
     failed: AtomicU64,
+    retries: AtomicU64,
+    tenant_rejected: AtomicU64,
     in_flight: AtomicI64,
     queue_depth: AtomicUsize,
     sync_in_use: AtomicUsize,
@@ -69,6 +82,7 @@ pub struct AppState {
     metrics: Arc<Metrics>,
     downstream: Arc<Semaphore>,
     limiter: Arc<Mutex<TokenBucket>>,
+    tenants: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl AppState {
@@ -81,6 +95,7 @@ impl AppState {
                 config.rate_burst,
             ))),
             metrics: Arc::new(Metrics::default()),
+            tenants: Arc::new(Mutex::new(HashMap::new())),
             tx,
             config,
         };
@@ -135,6 +150,18 @@ struct CpuQuery {
     ms: Option<u64>,
 }
 
+#[derive(Deserialize)]
+struct JobQuery {
+    tenant: Option<String>,
+    failures: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct StreamQuery {
+    items: Option<usize>,
+    delay_ms: Option<u64>,
+}
+
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health))
@@ -143,6 +170,7 @@ pub fn router(state: AppState) -> Router {
         .route("/cpu", get(cpu_work))
         .route("/limited", get(rate_limited))
         .route("/batch", get(batch))
+        .route("/stream", get(stream_response))
         .route("/metrics", get(metrics))
         .with_state(state)
 }
@@ -152,6 +180,7 @@ pub fn start_workers(rx: mpsc::Receiver<Job>, state: AppState) -> JoinHandle<()>
     let config = state.config.clone();
     let metrics = state.metrics.clone();
     let downstream = state.downstream.clone();
+    let tenants = state.tenants.clone();
     let mut handles = Vec::with_capacity(state.config.workers);
 
     for worker_id in 0..state.config.workers {
@@ -159,6 +188,7 @@ pub fn start_workers(rx: mpsc::Receiver<Job>, state: AppState) -> JoinHandle<()>
         let config = config.clone();
         let metrics = metrics.clone();
         let downstream = downstream.clone();
+        let tenants = tenants.clone();
         handles.push(tokio::spawn(async move {
             loop {
                 let job = {
@@ -174,17 +204,25 @@ pub fn start_workers(rx: mpsc::Receiver<Job>, state: AppState) -> JoinHandle<()>
                         .acquire()
                         .await
                         .expect("downstream semaphore remains open");
-                    sleep(config.process_delay).await;
+                    process_with_retries(&job, &config, &metrics).await
                 })
                 .await;
 
-                if result.is_ok() {
-                    metrics.processed.fetch_add(1, Ordering::Relaxed);
-                    println!("worker={worker_id} processed job={}", job.id);
-                } else {
-                    metrics.failed.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("worker={worker_id} job={} timed out", job.id);
+                match result {
+                    Ok(Ok(())) => {
+                        metrics.processed.fetch_add(1, Ordering::Relaxed);
+                        println!("worker={worker_id} processed job={}", job.id);
+                    }
+                    Ok(Err(err)) => {
+                        metrics.failed.fetch_add(1, Ordering::Relaxed);
+                        eprintln!("worker={worker_id} job={} failed: {err}", job.id);
+                    }
+                    Err(_) => {
+                        metrics.failed.fetch_add(1, Ordering::Relaxed);
+                        eprintln!("worker={worker_id} job={} timed out", job.id);
+                    }
                 }
+                release_tenant(&tenants, &job.tenant);
                 metrics.in_flight.fetch_sub(1, Ordering::Relaxed);
             }
         }));
@@ -201,9 +239,37 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }
 
-async fn enqueue_job(State(state): State<AppState>) -> impl IntoResponse {
+async fn enqueue_job(
+    State(state): State<AppState>,
+    Query(query): Query<JobQuery>,
+) -> impl IntoResponse {
+    let tenant = query.tenant.unwrap_or_else(|| "default".to_string());
+    let failures = query.failures.unwrap_or(0);
+    if !["alpha", "beta", "default"].contains(&tenant.as_str()) || failures > 10 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "tenant must be alpha, beta, or default; failures must be 0..=10"
+            })),
+        );
+    }
+
+    if !reserve_tenant(&state, &tenant) {
+        state.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .tenant_rejected
+            .fetch_add(1, Ordering::Relaxed);
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({ "error_code": "TENANT_BUSY" })),
+        );
+    }
+
     let job = Job {
         id: state.metrics.next_id.fetch_add(1, Ordering::Relaxed) + 1,
+        tenant,
+        failures,
     };
     state.metrics.queue_depth.fetch_add(1, Ordering::Relaxed);
     match state.tx.try_send(job.clone()) {
@@ -216,6 +282,7 @@ async fn enqueue_job(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(mpsc::error::TrySendError::Full(_)) => {
             state.metrics.queue_depth.fetch_sub(1, Ordering::Relaxed);
+            release_tenant(&state.tenants, &job.tenant);
             state.metrics.rejected.fetch_add(1, Ordering::Relaxed);
             (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -230,6 +297,7 @@ async fn enqueue_job(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
             state.metrics.queue_depth.fetch_sub(1, Ordering::Relaxed);
+            release_tenant(&state.tenants, &job.tenant);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(
@@ -394,6 +462,101 @@ async fn batch(
     )
 }
 
+async fn stream_response(Query(query): Query<StreamQuery>) -> impl IntoResponse {
+    let items = query.items.unwrap_or(20);
+    let delay = query.delay_ms.unwrap_or(10);
+    if !(1..=1000).contains(&items) || delay > 1000 {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "error": "items must be 1..=1000 and delay_ms must be 0..=1000"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+    }
+
+    let stream = futures_util::stream::unfold(
+        (1usize, items, Duration::from_millis(delay)),
+        |(item, total, delay)| async move {
+            if item > total {
+                None
+            } else {
+                if !delay.is_zero() {
+                    sleep(delay).await;
+                }
+                let chunk = Ok::<Bytes, Infallible>(Bytes::from(format!("{item}\n")));
+                Some((chunk, (item + 1, total, delay)))
+            }
+        },
+    );
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/plain; charset=utf-8")
+        .body(Body::from_stream(stream))
+        .unwrap()
+}
+
+async fn process_with_retries(
+    job: &Job,
+    config: &Config,
+    metrics: &Metrics,
+) -> Result<(), &'static str> {
+    let mut attempt = 1usize;
+    loop {
+        sleep(config.process_delay).await;
+        if attempt > job.failures {
+            return Ok(());
+        }
+        if attempt > config.max_retries {
+            return Err("retry limit reached");
+        }
+
+        metrics.retries.fetch_add(1, Ordering::Relaxed);
+        let multiplier = 1u32 << (attempt - 1).min(10);
+        let backoff = config
+            .retry_base
+            .saturating_mul(multiplier)
+            .min(Duration::from_secs(1));
+        let jitter_max_us = (backoff.as_micros() / 4).max(1) as u64;
+        let jitter = Duration::from_micros(
+            (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() as u64)
+                % jitter_max_us,
+        );
+        sleep(backoff + jitter).await;
+        attempt += 1;
+    }
+}
+
+fn reserve_tenant(state: &AppState, tenant: &str) -> bool {
+    if state.config.tenant_outstanding_limit == 0 {
+        return true;
+    }
+    let mut outstanding = state.tenants.lock().expect("tenant mutex poisoned");
+    let count = outstanding.entry(tenant.to_string()).or_default();
+    if *count >= state.config.tenant_outstanding_limit {
+        return false;
+    }
+    *count += 1;
+    true
+}
+
+fn release_tenant(tenants: &Mutex<HashMap<String, usize>>, tenant: &str) {
+    let mut outstanding = tenants.lock().expect("tenant mutex poisoned");
+    if let Some(count) = outstanding.get_mut(tenant) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            outstanding.remove(tenant);
+        }
+    }
+}
+
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let downstream_in_use =
         state.config.downstream_concurrency - state.downstream.available_permits();
@@ -409,6 +572,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         "requests_rejected_total": state.metrics.rejected.load(Ordering::Relaxed),
         "jobs_processed_total": state.metrics.processed.load(Ordering::Relaxed),
         "jobs_failed_total": state.metrics.failed.load(Ordering::Relaxed),
+        "jobs_retries_total": state.metrics.retries.load(Ordering::Relaxed),
+        "tenant_rejected_total": state.metrics.tenant_rejected.load(Ordering::Relaxed),
+        "tenant_outstanding_limit": state.config.tenant_outstanding_limit,
     }))
 }
 
@@ -434,7 +600,14 @@ mod tests {
         let mut config = test_config();
         config.queue_capacity = 1;
         let (state, _rx) = AppState::new(config);
-        state.tx.try_send(Job { id: 0 }).unwrap();
+        state
+            .tx
+            .try_send(Job {
+                id: 0,
+                tenant: "default".to_string(),
+                failures: 0,
+            })
+            .unwrap();
         state.metrics.queue_depth.store(1, Ordering::Relaxed);
 
         let response = router(state)
@@ -479,6 +652,75 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn tenant_bulkhead_keeps_other_tenants_admissible() {
+        let mut config = test_config();
+        config.tenant_outstanding_limit = 1;
+        let (state, _rx) = AppState::new(config);
+        let app = router(state);
+
+        for (tenant, expected) in [
+            ("alpha", StatusCode::ACCEPTED),
+            ("alpha", StatusCode::TOO_MANY_REQUESTS),
+            ("beta", StatusCode::ACCEPTED),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/jobs?tenant={tenant}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn transient_job_failures_are_retried_with_a_limit() {
+        let mut config = test_config();
+        config.max_retries = 2;
+        config.retry_base = Duration::ZERO;
+        let metrics = Metrics::default();
+        let job = Job {
+            id: 7,
+            tenant: "default".to_string(),
+            failures: 2,
+        };
+
+        assert_eq!(process_with_retries(&job, &config, &metrics).await, Ok(()));
+        assert_eq!(metrics.retries.load(Ordering::Relaxed), 2);
+
+        let permanently_failing = Job { failures: 4, ..job };
+        assert!(
+            process_with_retries(&permanently_failing, &config, &metrics)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_route_accepts_a_bounded_item_count() {
+        let (state, _rx) = AppState::new(test_config());
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/stream?items=3&delay_ms=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/plain; charset=utf-8"
+        );
     }
 
     #[tokio::test]
