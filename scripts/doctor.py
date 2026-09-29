@@ -57,6 +57,25 @@ def main() -> int:
             print(f"[missing]  {display_name}")
             missing.append(display_name)
 
+    if missing:
+        mise_tools = {
+            "go": "go",
+            "rustc": "rust",
+            "cargo": "rust",
+            "node": "node",
+            "pnpm": "pnpm",
+            "elixir": "elixir",
+            "Erlang/OTP": "erlang",
+            "mix": "elixir",
+            "golangci-lint": "golangci-lint",
+        }
+        install = sorted({mise_tools[name] for name in missing if name in mise_tools})
+        if install:
+            print(f"[fix]      Ferramentas ausentes: mise install {' '.join(install)}")
+        if "pnpm" in missing:
+            print("[fix]      Alternativa para pnpm: entre em node/ e rode `corepack pnpm --version` (usa o pin do package.json).")
+        print("[fix]      Depois, rode `make doctor` novamente para conferir.")
+
     for tool in OPTIONAL:
         version = versions.get(tool)
         display_name = tool

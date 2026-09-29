@@ -39,7 +39,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.13.2
+          version: v2.14.0
           working-directory: go
 
       - name: Build
@@ -113,8 +113,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "28.4"
-          elixir-version: "1.19.5"
+          otp-version: "29.1.1"
+          elixir-version: "1.20.4"
           version-type: strict
 
       - name: Install Hex and Rebar
