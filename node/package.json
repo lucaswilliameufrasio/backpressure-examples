@@ -1,0 +1,21 @@
+{
+  "name": "backpressure-examples-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/app.js && node --check src/server.js && node --check src/app.test.js"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
+    "fastify": "^5.12.5",
+    "p-limit": "^7.3.3",
+    "p-queue": "^9.3.3"
+  }
+}
