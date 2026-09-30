@@ -28,6 +28,7 @@
       "required": ["requested", "status"],
       "properties": {
         "requested": { "type": "boolean" },
+        "privileged": { "type": "boolean" },
         "status": { "enum": ["not-requested", "tool-not-installed", "unsupported-os", "passed", "failed", "permission-denied", "timed-out", "could-not-start"] }
       }
     }

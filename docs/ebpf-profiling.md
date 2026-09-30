@@ -4,6 +4,30 @@ Este guia é uma trilha opcional depois dos testes com `oha`. Não é necessári
 
 `make ebpf-check` grava um relatório sanitizado de readiness: Linux, disponibilidade de kernel BTF, `perf` e `bpftrace`. Ele não carrega um programa BPF. `make ebpf-probe` tenta explicitamente um programa mínimo com o bpftrace instalado, sem `sudo`; o relatório guarda apenas `passed`, `permission-denied`, `failed`, `timed-out` ou `tool-not-installed`, nunca stdout/stderr.
 
+## Instalação
+
+`bpftrace` é dependência do sistema, não um runtime/toolchain do projeto: depende de libbpf/LLVM e dos recursos do kernel. `mise ls-remote bpftrace` não encontra um backend/pacote no registry atual; por isso ele não está no `mise.toml`. `make setup` chama `doctor.py --ebpf` no final e imprime uma sugestão de package manager, sem executar comandos privilegiados automaticamente.
+
+Comandos comuns:
+
+```sh
+# CachyOS/Arch/Manjaro
+sudo pacman -S bpftrace
+
+# Debian/Ubuntu
+sudo apt install bpftrace
+
+# Fedora/RHEL
+sudo dnf install bpftrace
+
+# openSUSE
+sudo zypper install bpftrace
+```
+
+Depois confira `bpftrace --version`, `make doctor` e `make ebpf-check`. O kernel precisa expor BPF/perf events; BTF em `/sys/kernel/btf/vmlinux` é recomendado para símbolos legíveis. Se BTF não estiver presente, use um kernel/distribuição com `CONFIG_DEBUG_INFO_BTF`.
+
+Em hosts com `kernel.unprivileged_bpf_disabled` ou `kernel.perf_event_paranoid` restritivo, o probe sem privilégios pode retornar `permission-denied`. Para testar com privilégios sem criar arquivos como root, rode `sudo -v` e depois `make ebpf-probe-sudo`: o script executa somente o probe mínimo com `sudo -n`, enquanto o relatório é gravado pelo usuário normal. Não é necessário alterar sysctls nem conceder capabilities globais para seguir o restante do plano.
+
 ## Ordem sugerida
 
 1. Reproduza o sintoma com uma carga de `oha` definida.
@@ -24,7 +48,7 @@ Uma fila cheia pode ser backpressure funcionando como planejado, não um bug. Pr
 
 Requisitos variam com distribuição e kernel. Em geral, é necessário um kernel com suporte e BTF/perf events, bpftrace instalado e permissões elevadas (normalmente root ou capacidades apropriadas). Em containers, seccomp, capabilities e acesso ao host podem impedir o uso. eBPF não é parte dos testes automatizados do repositório.
 
-Exemplo de amostragem de stacks de usuário de um PID, se a versão instalada do bpftrace suportar `-p` e `ustack`:
+Exemplo manual de amostragem de stacks de usuário de um PID, se a versão instalada do bpftrace suportar `-p` e `ustack`:
 
 ```sh
 PID=<pid-do-servidor>

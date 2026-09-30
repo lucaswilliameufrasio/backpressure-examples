@@ -6,7 +6,12 @@ from pathlib import Path
 
 from scripts.benchmark import _assert_allowlisted, summarize_oha, validate_report
 from scripts.collect_environment import _source_status_entries_clean, collect_environment
-from scripts.ebpf_check import create_report as create_ebpf_report
+from scripts.doctor import ebpf_install_hint
+from scripts.ebpf_check import (
+    classify_probe,
+    create_report as create_ebpf_report,
+    validate_report as validate_ebpf_report,
+)
 from scripts.profile_go import summarize_pprof, validate_profile_report
 
 
@@ -84,6 +89,11 @@ def valid_report():
 
 
 class ReportPrivacyTests(unittest.TestCase):
+    def test_ebpf_setup_hint_uses_the_os_package_manager(self):
+        self.assertEqual(ebpf_install_hint("cachyos"), "sudo pacman -S bpftrace")
+        self.assertEqual(ebpf_install_hint("ubuntu"), "sudo apt install bpftrace")
+        self.assertIsNone(ebpf_install_hint("unknown-linux"))
+
     def test_generated_reports_do_not_make_source_tree_dirty(self):
         self.assertTrue(
             _source_status_entries_clean(
@@ -130,6 +140,17 @@ class ReportPrivacyTests(unittest.TestCase):
         self.assertNotIn("hostname", encoded)
         self.assertNotIn("username", encoded)
         self.assertNotIn("pid", encoded)
+
+        legacy_record = create_ebpf_report(probe_requested=False)
+        legacy_record["probe"].pop("privileged")
+        validate_ebpf_report(legacy_record)
+
+    def test_ebpf_probe_permission_errors_are_classified(self):
+        self.assertEqual(
+            classify_probe(1, "", "ERROR: Missing CAP_DAC_READ_SEARCH capability"),
+            "permission-denied",
+        )
+        self.assertEqual(classify_probe(0, "", ""), "passed")
 
 
 class OhaSummaryTests(unittest.TestCase):

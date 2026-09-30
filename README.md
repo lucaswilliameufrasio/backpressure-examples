@@ -56,11 +56,13 @@ make run-all       # inicia os quatro serviços em portas locais distintas
 
 ```sh
 make check         # format, lint, build e testes das quatro linguagens
+make doctor-ebpf   # detecta BTF, ferramenta e necessidade de privilégio
 make load-smoke    # carga curta oha e relatórios sanitizados
 make benchmark STACK=elixir SCENARIO=queue-saturation REPEATS=3
 make profile-go    # pprof CPU e relatório sumarizado sem manter o perfil bruto
 make ebpf-check    # verifica ferramentas/requisitos opcionais de Linux
 make ebpf-probe    # tenta carregar um programa mínimo (opcional, sem sudo)
+sudo -v && make ebpf-probe-sudo  # registra uma tentativa via sudo sem gravar como root
 ```
 
 O script `scripts/benchmark.py` permite selecionar cenário, limites e número de repetições. Use `make help` para listar os alvos.
@@ -149,6 +151,8 @@ Go usa a porta 8080; Rust e Node usam 3000; Elixir usa 3003. A execução conjun
 `RATE_BURST` é usado por Go/Rust; Elixir usa `RATE_PER_SECOND` com janela fixa de 1 segundo. Fastify também demonstra janela fixa, não token bucket.
 
 `MAX_RETRIES=0` desativa retries. `TENANT_OUTSTANDING_LIMIT=0` desativa as cotas alpha/beta. `ENABLE_PPROF=1` só cria um listener pprof separado em loopback; nunca o exponha em uma interface pública.
+
+`make setup` não instala pacotes de sistema nem usa `sudo`. Se `bpftrace` faltar, o diagnóstico final sugere o pacote da distro; consulte [`docs/ebpf-profiling.md`](docs/ebpf-profiling.md).
 
 ## Experimentar com curl
 

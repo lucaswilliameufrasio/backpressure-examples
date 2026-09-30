@@ -4,13 +4,14 @@ STACK ?= go
 SCENARIO ?= queue-saturation
 REPEATS ?= 3
 
-.PHONY: help doctor setup check test check-go check-rust check-node check-elixir check-python \
-	run-go run-rust run-node run-elixir run-all load-smoke benchmark profile profile-go ebpf-check ebpf-probe
+.PHONY: help doctor doctor-ebpf setup check test check-go check-rust check-node check-elixir check-python \
+	run-go run-rust run-node run-elixir run-all load-smoke benchmark profile profile-go ebpf-check ebpf-probe ebpf-probe-sudo
 
 help:
 	@printf '%s\n' \
 	  'setup        install pinned tools (mise) and language dependencies' \
 	  'doctor       show required and optional local tools' \
+	  'doctor-ebpf  show distro install/permission guidance for eBPF' \
 	  'run-all      start all four servers on free loopback ports' \
 	  'run-<stack>  start one of go, rust, node, elixir' \
 	  'check        format, lint, test and build every stack' \
@@ -19,10 +20,14 @@ help:
 	  'profile      show runtime profiling guide' \
 	  'profile-go   record a sanitized local Go pprof CPU profile' \
 	  'ebpf-check   check and record optional Linux profiler readiness' \
-	  'ebpf-probe   explicitly attempt a minimal local eBPF program'
+	  'ebpf-probe   try a minimal eBPF program without privilege escalation' \
+	  'ebpf-probe-sudo run a minimal probe via sudo -n after sudo -v'
 
 doctor:
 	python3 scripts/doctor.py
+
+doctor-ebpf:
+	python3 scripts/doctor.py --ebpf
 
 setup:
 	@if command -v mise >/dev/null 2>&1; then mise install go rust node pnpm erlang elixir golangci-lint oha; fi
@@ -32,6 +37,7 @@ setup:
 	cd elixir && $(MISE_EXEC)mix local.hex --force
 	cd elixir && $(MISE_EXEC)mix local.rebar --force
 	cd elixir && $(MISE_EXEC)mix deps.get
+	$(MISE_EXEC)python3 scripts/doctor.py --ebpf
 
 check-go:
 	cd go && test -z "$$($(MISE_EXEC)gofmt -l .)"
@@ -96,3 +102,6 @@ ebpf-check:
 
 ebpf-probe:
 	$(MISE_EXEC)python3 scripts/ebpf_check.py --run-probe
+
+ebpf-probe-sudo:
+	$(MISE_EXEC)python3 scripts/ebpf_check.py --run-probe --sudo-probe

@@ -21,39 +21,53 @@ from scripts.benchmark import _assert_allowlisted
 from scripts.collect_environment import collect_environment
 
 
-def run_probe(bpftrace: str | None, enabled: bool) -> dict:
+def run_probe(bpftrace: str | None, enabled: bool, privileged: bool = False) -> dict:
     if not enabled:
-        return {"requested": False, "status": "not-requested"}
+        return {"requested": False, "privileged": False, "status": "not-requested"}
     if platform.system().lower() != "linux":
-        return {"requested": True, "status": "unsupported-os"}
+        return {"requested": True, "privileged": privileged, "status": "unsupported-os"}
     if not bpftrace:
-        return {"requested": True, "status": "tool-not-installed"}
+        return {"requested": True, "privileged": privileged, "status": "tool-not-installed"}
+
+    command = [bpftrace, "-q", "-e", "BEGIN { exit(); }"]
+    if privileged:
+        command = ["sudo", "-n", *command]
 
     try:
         result = subprocess.run(
-            [bpftrace, "-q", "-e", "BEGIN { exit(); }"],
+            command,
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return {"requested": True, "status": "timed-out"}
+        return {"requested": True, "privileged": privileged, "status": "timed-out"}
     except OSError:
-        return {"requested": True, "status": "could-not-start"}
+        return {"requested": True, "privileged": privileged, "status": "could-not-start"}
 
-    if result.returncode == 0:
-        status = "passed"
-    else:
-        detail = f"{result.stderr} {result.stdout}".lower()
-        status = "permission-denied" if any(
-            marker in detail for marker in ("operation not permitted", "permission denied", "not authorized")
-        ) else "failed"
+    status = classify_probe(result.returncode, result.stdout, result.stderr)
     # stderr/stdout are intentionally discarded; only a bounded status is recorded.
-    return {"requested": True, "status": status}
+    return {"requested": True, "privileged": privileged, "status": status}
 
 
-def create_report(probe_requested: bool = False) -> dict:
+def classify_probe(returncode: int, stdout: str, stderr: str) -> str:
+    if returncode == 0:
+        return "passed"
+    detail = f"{stderr} {stdout}".lower()
+    permission_markers = (
+        "operation not permitted",
+        "permission denied",
+        "not authorized",
+        "a password is required",
+        "a terminal is required",
+        "missing cap_",
+        "run bpftrace as the root user",
+    )
+    return "permission-denied" if any(marker in detail for marker in permission_markers) else "failed"
+
+
+def create_report(probe_requested: bool = False, privileged: bool = False) -> dict:
     environment = collect_environment()
     bpftrace_version = environment["tools"].get("bpftrace")
     btf_available = Path("/sys/kernel/btf/vmlinux").is_file() if platform.system() == "Linux" else False
@@ -70,7 +84,7 @@ def create_report(probe_requested: bool = False) -> dict:
             "bpftrace_available": bpftrace_version is not None,
             "perf_available": "perf" in environment["tools"],
         },
-        "probe": run_probe(shutil.which("bpftrace"), probe_requested),
+        "probe": run_probe(shutil.which("bpftrace"), probe_requested, privileged),
     }
     validate_report(report)
     return report
@@ -85,8 +99,12 @@ def validate_report(report: dict) -> None:
         raise ValueError("unsupported eBPF report schema version")
     if set(report["readiness"]) != set(schema["properties"]["readiness"]["properties"]):
         raise ValueError("eBPF readiness fields do not match the schema")
-    if set(report["probe"]) != set(schema["properties"]["probe"]["properties"]):
+    probe_fields = set(schema["properties"]["probe"]["properties"])
+    required_probe_fields = set(schema["properties"]["probe"]["required"])
+    if not required_probe_fields.issubset(report["probe"]) or set(report["probe"]).difference(probe_fields):
         raise ValueError("eBPF probe fields do not match the schema")
+    if "privileged" in report["probe"] and not isinstance(report["probe"]["privileged"], bool):
+        raise ValueError("probe privileged marker must be boolean")
     if report["probe"]["status"] not in schema["properties"]["probe"]["properties"]["status"]["enum"]:
         raise ValueError("eBPF probe status is not allowlisted")
     _assert_allowlisted(report)
@@ -95,10 +113,13 @@ def validate_report(report: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-probe", action="store_true", help="attempt a tiny eBPF program without sudo")
+    parser.add_argument("--sudo-probe", action="store_true", help="use sudo -n after `sudo -v`")
     parser.add_argument("--output-dir", default="benchmarks/profiling/results")
     args = parser.parse_args()
 
-    report = create_report(args.run_probe)
+    if args.sudo_probe and not args.run_probe:
+        parser.error("--sudo-probe requires --run-probe")
+    report = create_report(args.run_probe or args.sudo_probe, privileged=args.sudo_probe)
     output_dir = ROOT / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{report['checked_at'][:19].replace(':', '').replace('-', '').replace('T', 'T')}-{report['run_id']}"
@@ -119,6 +140,7 @@ def main() -> int:
         f"- bpftrace available: `{readiness['bpftrace_available']}`",
         f"- perf available: `{readiness['perf_available']}`",
         f"- Probe status: `{probe['status']}`",
+        f"- Privileged probe requested: `{probe['privileged']}`",
         "",
         "No hostname, username, PID, executable path, command output, capabilities dump, or raw profile is recorded.",
         "",
