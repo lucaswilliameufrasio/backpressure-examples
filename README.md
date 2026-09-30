@@ -181,6 +181,8 @@ Isso fornece atividade de CPU para profiler/FlameGraph. O endpoint Node é delib
 (cd node && pnpm check && pnpm test)
 ```
 
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa formatação, lint, testes e build por linguagem em cada push e pull request. Os testes de carga com `oha` continuam manuais para manter CI determinística.
+
 ## Cenários de produção: conceitos, não dependências da demo
 
 ### Webhook de pagamento

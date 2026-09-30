@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Check formatting
+        working-directory: go
+        run: test -z "$(gofmt -l .)"
+
+      - name: Test
+        working-directory: go
+        run: go test -race -count=1 ./...
+
+      - name: Vet
+        working-directory: go
+        run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+          working-directory: go
+
+      - name: Build
+        working-directory: go
+        run: go build -o "$RUNNER_TEMP/backpressure-go" .
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      - name: Check formatting
+        working-directory: rust
+        run: cargo fmt --check
+
+      - name: Test
+        working-directory: rust
+        run: cargo test --locked
+
+      - name: Lint
+        working-directory: rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Build
+        working-directory: rust
+        run: cargo build --locked --release
+
+  node:
+    name: Node.js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+          package_json_file: node/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: node/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: node
+        run: pnpm install --frozen-lockfile
+
+      - name: Check syntax
+        working-directory: node
+        run: pnpm check
+
+      - name: Test
+        working-directory: node
+        run: pnpm test
