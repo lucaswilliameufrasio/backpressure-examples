@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/backpressure-benchmark.schema.json",
+  "title": "Sanitized backpressure benchmark run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "started_at",
+    "git_commit",
+    "stack",
+    "scenario",
+    "configuration",
+    "environment",
+    "load_generator",
+    "repetitions",
+    "aggregate"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "pattern": "^[a-f0-9]{12}$" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "git_commit": { "type": ["string", "null"], "maxLength": 12 },
+    "stack": { "enum": ["go", "rust", "node", "elixir"] },
+    "scenario": {
+      "enum": [
+        "queue-saturation",
+        "constant-rate",
+        "burst",
+        "rate-limit",
+        "slow-downstream",
+        "cpu",
+        "streaming",
+        "retry-storm",
+        "tenant-fairness",
+        "shutdown-drain"
+      ]
+    },
+    "configuration": { "type": "object" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "hardware", "container_limits", "tools", "git_commit", "working_tree_clean", "python"],
+      "properties": {
+        "os": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["family", "distribution_id", "distribution_version", "kernel_version", "architecture"],
+          "properties": {
+            "family": { "type": "string" },
+            "distribution_id": { "type": ["string", "null"] },
+            "distribution_version": { "type": ["string", "null"] },
+            "kernel_version": { "type": ["string", "null"] },
+            "architecture": { "type": "string" }
+          }
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu_model", "logical_cores", "memory_gib_rounded"],
+          "properties": {
+            "cpu_model": { "type": ["string", "null"] },
+            "logical_cores": { "type": ["integer", "null"] },
+            "memory_gib_rounded": { "type": ["number", "null"] }
+          }
+        },
+        "container_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu_cores_rounded", "memory_gib_rounded"],
+          "properties": {
+            "cpu_cores_rounded": { "type": ["number", "null"] },
+            "memory_gib_rounded": { "type": ["number", "null"] }
+          }
+        },
+        "tools": { "type": "object", "additionalProperties": { "type": "string" } },
+        "git_commit": { "type": ["string", "null"] },
+        "working_tree_clean": { "type": "boolean" },
+        "python": { "type": "string" }
+      }
+    },
+    "load_generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "oha" },
+        "version": { "type": "string" }
+      }
+    },
+    "repetitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "parameters", "http", "service_resources", "application_metrics", "tenant_probe", "graceful_shutdown"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "parameters": { "type": "object" },
+          "http": { "type": "object" },
+          "service_resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sampled", "average_cpu_cores", "peak_rss_mib", "sample_interval_ms"],
+            "properties": {
+              "sampled": { "type": "boolean" },
+              "average_cpu_cores": { "type": ["number", "null"] },
+              "peak_rss_mib": { "type": ["number", "null"] },
+              "sample_interval_ms": { "type": "integer" }
+            }
+          },
+          "application_metrics": { "type": "object" },
+          "tenant_probe": { "type": ["object", "null"] },
+          "graceful_shutdown": { "type": ["object", "null"] }
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requests_per_second_median", "latency_ms_median"],
+      "properties": {
+        "requests_per_second_median": { "type": ["number", "null"] },
+        "latency_ms_median": { "type": "object", "additionalProperties": { "type": ["number", "null"] } }
+      }
+    }
+  }
+}

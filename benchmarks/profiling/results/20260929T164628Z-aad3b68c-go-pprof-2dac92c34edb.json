@@ -1,0 +1,168 @@
+{
+  "application_metrics": {
+    "downstream_concurrency": 2,
+    "downstream_in_use": 0,
+    "jobs_enqueued_total": 0,
+    "jobs_failed_total": 0,
+    "jobs_in_flight": 0,
+    "jobs_processed_total": 0,
+    "jobs_retries_total": 0,
+    "queue_capacity": 8,
+    "queue_depth": 0,
+    "requests_rejected_total": 385869,
+    "sync_requests_in_flight": 0,
+    "tenant_outstanding_limit": 0,
+    "tenant_rejected_total": 0,
+    "workers": 2
+  },
+  "configuration": {
+    "concurrency": 8,
+    "cpu_load_seconds": 5,
+    "cpu_request_ms": 500,
+    "downstream_concurrency": 2,
+    "pprof_bind_scope": "loopback",
+    "profile_seconds": 3
+  },
+  "environment": {
+    "container_limits": {
+      "cpu_cores_rounded": null,
+      "memory_gib_rounded": null
+    },
+    "git_commit": "aad3b68c04a6",
+    "hardware": {
+      "cpu_model": "AMD Ryzen 9 7900 12-Core Processor",
+      "logical_cores": 24,
+      "memory_gib_rounded": 62.0
+    },
+    "os": {
+      "architecture": "x86_64",
+      "distribution_id": "cachyos",
+      "distribution_version": null,
+      "family": "linux",
+      "kernel_version": "7.2.3"
+    },
+    "python": "3.14.7",
+    "tools": {
+      "cargo": "cargo 1.98.1",
+      "elixir": "Elixir 1.19.5",
+      "erlang_otp": "28",
+      "go": "go version go1.27.1",
+      "golangci_lint": "golangci-lint has version 2.13.2",
+      "mise": "2026.9.4",
+      "mix": "Mix 1.19.5",
+      "node": "v24.21.0",
+      "oha": "oha 1.14.0",
+      "perf": "perf version 7.2.3-1",
+      "pnpm": "11.21.0",
+      "rustc": "rustc 1.98.1"
+    },
+    "working_tree_clean": false
+  },
+  "git_commit": "aad3b68c04a6",
+  "graceful_shutdown": {
+    "duration_seconds": 0.003943,
+    "exit_code": 0,
+    "timed_out": false
+  },
+  "load_result": {
+    "bytes_per_second": 2931230.99,
+    "duration_seconds": 5.002796,
+    "http_2xx_rate": 5.2e-05,
+    "latency_ms": {
+      "p50": 0.056,
+      "p95": 0.173,
+      "p99": 0.384
+    },
+    "oha_success_rate": 1.0,
+    "requests": 385889,
+    "requests_per_second": 77134.659,
+    "status_codes": {
+      "200": 20,
+      "503": 385869
+    },
+    "transport_errors": 0
+  },
+  "profile_summary": {
+    "profile_type": "cpu",
+    "raw_profile_retained": false,
+    "sample_duration_seconds": 3,
+    "top_functions": [
+      {
+        "cumulative_percent": 35.65,
+        "cumulative_seconds": 5.03,
+        "flat_percent": 35.01,
+        "flat_seconds": 4.94,
+        "symbol": "main.burnCPU"
+      },
+      {
+        "cumulative_percent": 2.83,
+        "cumulative_seconds": 0.4,
+        "flat_percent": 2.83,
+        "flat_seconds": 0.4,
+        "symbol": "runtime.futex"
+      },
+      {
+        "cumulative_percent": 1.63,
+        "cumulative_seconds": 0.23,
+        "flat_percent": 1.63,
+        "flat_seconds": 0.23,
+        "symbol": "runtime.usleep"
+      },
+      {
+        "cumulative_percent": 0.85,
+        "cumulative_seconds": 0.12,
+        "flat_percent": 0.85,
+        "flat_seconds": 0.12,
+        "symbol": "runtime.procyieldAsm"
+      },
+      {
+        "cumulative_percent": 2.62,
+        "cumulative_seconds": 0.37,
+        "flat_percent": 0.78,
+        "flat_seconds": 0.11,
+        "symbol": "runtime.runqgrab"
+      },
+      {
+        "cumulative_percent": 13.25,
+        "cumulative_seconds": 1.87,
+        "flat_percent": 0.64,
+        "flat_seconds": 0.09,
+        "symbol": "runtime.findRunnable"
+      },
+      {
+        "cumulative_percent": 0.78,
+        "cumulative_seconds": 0.11,
+        "flat_percent": 0.64,
+        "flat_seconds": 0.09,
+        "symbol": "runtime.mallocgcSmallScanNoHeaderSC7"
+      },
+      {
+        "cumulative_percent": 0.64,
+        "cumulative_seconds": 0.09,
+        "flat_percent": 0.64,
+        "flat_seconds": 0.09,
+        "symbol": "runtime.osyield"
+      },
+      {
+        "cumulative_percent": 0.64,
+        "cumulative_seconds": 0.09,
+        "flat_percent": 0.64,
+        "flat_seconds": 0.09,
+        "symbol": "time.runtimeNow"
+      }
+    ],
+    "total_cpu_samples_seconds": 14.11
+  },
+  "profiler": "go tool pprof",
+  "run_id": "2dac92c34edb",
+  "schema_version": 1,
+  "service_resources": {
+    "average_cpu_cores": 4.365,
+    "peak_rss_mib": 19.96,
+    "sample_interval_ms": 100,
+    "sampled": true
+  },
+  "stack": "go",
+  "started_at": "2026-09-29T16:46:28Z",
+  "working_tree_clean": false
+}

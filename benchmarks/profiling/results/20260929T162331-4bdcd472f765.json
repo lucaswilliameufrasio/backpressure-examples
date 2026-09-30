@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-09-29T16:23:31Z",
+  "environment": {
+    "container_limits": {
+      "cpu_cores_rounded": null,
+      "memory_gib_rounded": null
+    },
+    "git_commit": "aad3b68c04a6",
+    "hardware": {
+      "cpu_model": "AMD Ryzen 9 7900 12-Core Processor",
+      "logical_cores": 24,
+      "memory_gib_rounded": 62.0
+    },
+    "os": {
+      "architecture": "x86_64",
+      "distribution_id": "cachyos",
+      "distribution_version": null,
+      "family": "linux",
+      "kernel_version": "7.2.3"
+    },
+    "python": "3.14.7",
+    "tools": {
+      "cargo": "cargo 1.98.1",
+      "elixir": "Elixir 1.19.5",
+      "erlang_otp": "28",
+      "go": "go version go1.27.1",
+      "golangci_lint": "golangci-lint has version 2.13.2",
+      "mise": "2026.9.4",
+      "mix": "Mix 1.19.5",
+      "node": "v24.21.0",
+      "oha": "oha 1.14.0",
+      "perf": "perf version 7.2.3-1",
+      "pnpm": "11.21.0",
+      "rustc": "rustc 1.98.1"
+    },
+    "working_tree_clean": false
+  },
+  "git_commit": "aad3b68c04a6",
+  "probe": {
+    "requested": false,
+    "status": "not-requested"
+  },
+  "readiness": {
+    "bpftrace_available": false,
+    "kernel_btf_available": true,
+    "linux": true,
+    "perf_available": true
+  },
+  "run_id": "4bdcd472f765",
+  "schema_version": 1,
+  "working_tree_clean": false
+}

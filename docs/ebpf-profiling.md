@@ -2,6 +2,8 @@
 
 Este guia é uma trilha opcional depois dos testes com `oha`. Não é necessário para compilar, executar ou validar os exemplos básicos.
 
+`make ebpf-check` grava um relatório sanitizado de readiness: Linux, disponibilidade de kernel BTF, `perf` e `bpftrace`. Ele não carrega um programa BPF. `make ebpf-probe` tenta explicitamente um programa mínimo com o bpftrace instalado, sem `sudo`; o relatório guarda apenas `passed`, `permission-denied`, `failed`, `timed-out` ou `tool-not-installed`, nunca stdout/stderr.
+
 ## Ordem sugerida
 
 1. Reproduza o sintoma com uma carga de `oha` definida.
@@ -14,7 +16,7 @@ Uma fila cheia pode ser backpressure funcionando como planejado, não um bug. Pr
 
 ## Profiler por runtime
 
-- **Go:** habilite `net/http/pprof` apenas para profiling local controlado e capture um profile durante `/cpu`; use `go tool pprof` para examinar o resultado. Evite expor endpoints pprof numa interface pública.
+- **Go:** inicie com `ENABLE_PPROF=1`; o listener pprof escuta somente `127.0.0.1:6060`. Capture um profile durante `/cpu` com `go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=15'`. Evite expor o listener fora de localhost.
 - **Rust:** compile com símbolos de debug para profiling (`cargo run` em dev ou configure símbolos no profile release) e use `samply` ou `perf` para capturar stacks.
 - **Node.js:** rode o servidor com `node --cpu-prof src/server.js`, gere carga em `/cpu` e finalize o processo para gravar o `.cpuprofile`; abra no Chrome DevTools. O endpoint CPU-bound demonstra deliberadamente bloqueio do event loop.
 

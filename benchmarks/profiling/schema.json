@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sanitized eBPF readiness validation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "checked_at", "git_commit", "working_tree_clean", "environment", "readiness", "probe"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "pattern": "^[a-f0-9]{12}$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "git_commit": { "type": ["string", "null"] },
+    "working_tree_clean": { "type": "boolean" },
+    "environment": { "type": "object" },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["linux", "kernel_btf_available", "bpftrace_available", "perf_available"],
+      "properties": {
+        "linux": { "type": "boolean" },
+        "kernel_btf_available": { "type": "boolean" },
+        "bpftrace_available": { "type": "boolean" },
+        "perf_available": { "type": "boolean" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "status"],
+      "properties": {
+        "requested": { "type": "boolean" },
+        "status": { "enum": ["not-requested", "tool-not-installed", "unsupported-os", "passed", "failed", "permission-denied", "timed-out", "could-not-start"] }
+      }
+    }
+  }
+}

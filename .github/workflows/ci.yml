@@ -104,3 +104,51 @@ jobs:
       - name: Test
         working-directory: node
         run: pnpm test
+
+  elixir:
+    name: Elixir
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.4"
+          elixir-version: "1.19.5"
+          version-type: strict
+
+      - name: Install Hex and Rebar
+        working-directory: elixir
+        run: mix local.hex --force && mix local.rebar --force
+
+      - name: Install dependencies
+        working-directory: elixir
+        run: mix deps.get --check-locked
+
+      - name: Check formatting
+        working-directory: elixir
+        run: mix format --check-formatted
+
+      - name: Test
+        working-directory: elixir
+        run: mix test
+
+      - name: Compile
+        working-directory: elixir
+        run: mix compile --warnings-as-errors
+
+  scripts:
+    name: Benchmark scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test reporting and privacy checks
+        run: python -m unittest scripts.test_reporting
+
+      - name: Compile scripts
+        run: python -m py_compile scripts/*.py
